@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd">
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="33b9ef03-f0ca-491f-ab71-5aa136aa3e98" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="Qwer@1234" database="customers" useXaTransactions="true"/>
+	</db:config>
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="f4ccdec0-fffc-49e3-8f0b-c1c4f9e63f66" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<bti:transaction-manager doc:name="Bitronix Transaction Manager" doc:id="fb3ee251-fbab-4413-9337-314109004149" />
+	<flow name="transaction-management-pocFlow" doc:id="2364b585-9ea7-4a7b-b267-267998c46976" >
+		<http:listener doc:name="Listener" doc:id="c064bee7-efc2-49cf-b48e-faf2f10bfc85" config-ref="HTTP_Listener_config" path="/test">
+			<http:error-response statusCode="#[vars.statusCode]" />
+		</http:listener>
+		<logger level="INFO" doc:name="Logger" doc:id="7da29a22-584f-4d7b-b066-9e63fc73407d" message="Process started." />
+		<try doc:name="Try" doc:id="2c337a49-70e0-4f74-89e1-1d0a521d7aa9" transactionalAction="ALWAYS_BEGIN" transactionType="XA">
+			<db:select doc:name="Select" doc:id="315f5512-3364-431c-873f-586f59ca0787" config-ref="Database_Config" target="data">
+				<db:sql ><![CDATA[SELECT * FROM customers.table_a WHERE id = :id]]></db:sql>
+				<db:input-parameters ><![CDATA[#[{
+	id: payload.id
+}]]]></db:input-parameters>
+			</db:select>
+			<db:delete doc:name="Delete" doc:id="48b6f759-082e-4525-ace5-0cc1f1f9aaaf" config-ref="Database_Config">
+				<db:sql ><![CDATA[DELETE FROM customers.table_a WHERE id = :id]]></db:sql>
+				<db:input-parameters ><![CDATA[#[{
+	id: vars.data[0].id 
+}]]]></db:input-parameters>
+			</db:delete>
+			<db:insert doc:name="Insert" doc:id="f82ef436-61fd-4977-afc3-112762e3f6fc" config-ref="Database_Config">
+				<db:sql ><![CDATA[INSERT INTO customers.table_b (Name,City) VALUES (:name,:city)]]></db:sql>
+				<db:input-parameters ><![CDATA[#[{
+	name: vars.data[0].Name,
+	city: vars.data[0].City
+}]]]></db:input-parameters>
+			</db:insert>
+			<choice doc:name="Choice" doc:id="6b7a39b9-0231-4e30-bf1f-58795aa976fe">
+			<when expression="#[payload.affectedRows == 0]">
+				<raise-error doc:name="Raise error" doc:id="c689562a-117f-4c10-b213-f879d42a8d32" type="DATABASE:INSERTIONFAILED" description="Data not Inserted Successfully." />
+					<set-variable value="#[404]" doc:name="Set Variable" doc:id="7b9d3136-81b0-43e4-b79c-5582a5a62b20" variableName="statusCode"/>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Logger" doc:id="8a5520f1-f594-4f01-8aa3-3f9ea40c9505" message="Data Inserted Successfully." />
+					<set-variable value="201" doc:name="Set Variable" doc:id="79e293e2-b43a-419a-bd9c-15e275962be8" variableName="statusCode"/>
+			</otherwise>
+		</choice>
+		</try>
+		<set-payload value='#[%dw 2.0
+output application/json
+---
+{
+	"message": payload
+}]' doc:name="Set Payload" doc:id="2501505c-7bf0-4832-8ab6-ff0487d0cd51" />
+		<logger level="INFO" doc:name="Logger" doc:id="2bb436c6-7130-46c5-b011-301dc8e5404b" message="Process Ended"/>
+	</flow>
+</mule>
